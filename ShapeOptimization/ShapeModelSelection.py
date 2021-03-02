@@ -54,9 +54,15 @@ and integrator settings corresponding to the indices 0 and 0 are used, in combin
 the combination of integrator and propagator settings that you deem the most suitable, based on the results of
 assignment 1.
 
-The script saves the state and dependent variable history for each model settings. In addition, the differences in state
-and dependent variable history with respect to the nominal case are also written to files. The output is written if
-the variable write_results_to_file is true.
+The script saves the state and dependent variable history for each model settings. In addition, a single file called
+'limit_values.dat' is saved with the minimum and maximum time outside which numerical interpolation errors may affect
+your comparison. It is up to you whether cutting value outside of that temporal interval during the post-processing.
+Finally, outside of the main for loop, the differences in state and dependent variable history with respect to the
+nominal case are also written to files. The two are compared at discrete epochs generated with a fixed step size
+(see variable output_interpolation_step) valid for all cases. The function compare_models is designed to make
+other cross-comparisons possible (e.g. model 2 vs model 3).
+
+The output is written if the variable write_results_to_file is true.
 """
 
 ###########################################################################
@@ -94,10 +100,9 @@ shape_parameters = [8.148730872315355,
                     0.2781438040896319,
                     0.4559143679738996]
 # Choose whether output of the propagation is written to files
-write_results_to_file = True
+write_results_to_file = False
 # Get path of current directory
 current_dir = os.path.dirname(__file__)
-output_interpolation_step = 10.0
 
 ###########################################################################
 # DEFINE SIMULATION SETTINGS ##############################################
@@ -105,7 +110,12 @@ output_interpolation_step = 10.0
 
 # Initialize dictionary to save simulation output
 simulation_results = dict()
+
+# Set number of models to loop over
 number_of_models = 5
+
+# Set the interpolation step at which different runs are compared
+output_interpolation_step = 2.0  # s
 
 # Loop over different model settings
 for model_test in range(number_of_models):
@@ -255,22 +265,30 @@ for model_test in range(number_of_models):
 NOTE TO STUDENTS
 The first index of the dictionary simulation_results refers to the model case, while the second index can be 0 (states)
 or 1 (dependent variables).
-You can use this dictonary to make all the cross-comparison that you deem necessary. The code below currently compares
+You can use this dictionary to make all the cross-comparison that you deem necessary. The code below currently compares
 every case with respect to the "nominal" one.
 """
 # Compare all the model settings with the nominal case
 for model_test in range(1, number_of_models):
     # Get output path
     output_path = current_dir + '/Model_' + str(model_test) + '/'
+    # Retrieve current state and dependent variable history
+    current_state_history = simulation_results[model_test][0]
+    current_dependent_variable_history = simulation_results[model_test][1]
+    # Create vector of epochs to be compared (boundaries are referred to the first case)
+    current_epochs = list(current_state_history.keys())
+    interpolation_epochs = np.arange(current_epochs[0],
+                                     current_epochs[-1],
+                                     output_interpolation_step)
     # Compare state history
-    state_difference_wrt_nominal = Util.compare_models(simulation_results[0][0],
-                                                       simulation_results[model_test][0],
-                                                       output_interpolation_step,
+    state_difference_wrt_nominal = Util.compare_models(current_state_history,
+                                                       simulation_results[0][0],
+                                                       interpolation_epochs,
                                                        output_path,
                                                        'state_difference_wrt_nominal_case.dat')
     # Compare dependent variable history
-    dependent_variable_difference_wrt_nominal = Util.compare_models(simulation_results[0][1],
-                                                                    simulation_results[model_test][1],
-                                                                    output_interpolation_step,
+    dependent_variable_difference_wrt_nominal = Util.compare_models(current_dependent_variable_history,
+                                                                    simulation_results[0][1],
+                                                                    interpolation_epochs,
                                                                     output_path,
                                                                     'dependent_variable_difference_wrt_nominal_case.dat')

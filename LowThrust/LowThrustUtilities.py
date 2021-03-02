@@ -190,7 +190,7 @@ def get_integrator_settings(propagator_index: int,
 
 # NOTE TO STUDENTS: THIS FUNCTION CAN BE EXTENDED TO GENERATE A MORE ROBUST BENCHMARK (USING MORE THAN 2 RUNS)
 def generate_benchmarks(benchmark_step_size: float,
-			simulation_start_epoch: float,
+                        simulation_start_epoch: float,
                         specific_impulse: float,
                         minimum_mars_distance: float,
                         time_buffer: float,
@@ -239,7 +239,7 @@ def generate_benchmarks(benchmark_step_size: float,
     """
     ### CREATION OF THE TWO BENCHMARKS ###
     # Define benchmarks' step sizes
-    first_benchmark_step_size = benchmark_step_size  
+    first_benchmark_step_size = benchmark_step_size
     second_benchmark_step_size = 2.0 * first_benchmark_step_size
 
     # Create integrator settings for the first benchmark, using a fixed step size RKDP8(7) integrator
@@ -356,3 +356,53 @@ def compare_benchmarks(first_benchmark: dict,
         save2txt(benchmark_difference, filename, output_path)
     # Return the interpolator
     return benchmark_difference
+
+
+def compare_models(first_model: dict,
+                   second_model: dict,
+                   interpolation_epochs: np.ndarray,
+                   output_path: str,
+                   filename: str) -> dict:
+    """
+    It compares the results of two runs with different model settings.
+
+    It uses an 8th-order Lagrange interpolator to compare the state (or the dependent variable, depending on what is
+    given as input) history. The difference is returned in form of a dictionary and, if desired, written to a file named
+    filename and placed in the directory output_path.
+
+    Parameters
+    ----------
+    first_model : dict
+        State (or dependent variable history) from the first run.
+    second_model : dict
+        State (or dependent variable history) from the second run.
+    interpolation_epochs : np.ndarray
+        Vector of epochs at which the two runs are compared.
+    output_path : str
+        If and where to save the benchmark results (if None, results are NOT written).
+    filename : str
+        Name of the output file.
+
+    Returns
+    -------
+    model_difference : dict
+        Interpolated difference between the two simulations' state (or dependent variable) history.
+    """
+    # Create interpolator settings
+    interpolator_settings = interpolators.lagrange_interpolation(8,
+                                                                 boundary_interpolation=interpolators.use_boundary_value)
+    # Create 8th-order Lagrange interpolator for both cases
+    first_interpolator = interpolators.create_one_dimensional_interpolator(first_model,
+                                                                           interpolator_settings)
+    second_interpolator = interpolators.create_one_dimensional_interpolator(second_model,
+                                                                            interpolator_settings)
+    # Calculate the difference between the first and second model at specific epochs
+    model_difference = {epoch: second_interpolator.interpolate(epoch) - first_interpolator.interpolate(epoch)
+                        for epoch in interpolation_epochs}
+    # Write results to files
+    if output_path is not None:
+        save2txt(model_difference,
+                 filename,
+                 output_path)
+    # Return the model difference
+    return model_difference

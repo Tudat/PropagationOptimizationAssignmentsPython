@@ -404,7 +404,7 @@ def compare_benchmarks(first_benchmark: dict,
 
 def compare_models(first_model: dict,
                    second_model: dict,
-                   interpolation_step: float,
+                   interpolation_epochs: np.ndarray,
                    output_path: str,
                    filename: str) -> dict:
     """
@@ -420,8 +420,8 @@ def compare_models(first_model: dict,
         State (or dependent variable history) from the first run.
     second_model : dict
         State (or dependent variable history) from the second run.
-    interpolation_step : float
-        Time step at which the two runs are compared.
+    interpolation_epochs : np.ndarray
+        Vector of epochs at which the two runs are compared.
     output_path : str
         If and where to save the benchmark results (if None, results are NOT written).
     filename : str
@@ -440,16 +440,13 @@ def compare_models(first_model: dict,
                                                                            interpolator_settings)
     second_interpolator = interpolators.create_one_dimensional_interpolator(second_model,
                                                                             interpolator_settings)
-    # Create vector of epochs to be compared (boundaries are referred to the first case)
-    first_model_epochs = list(first_model.keys())
-    output_epochs = np.arange(first_model_epochs[0], first_model_epochs[-1], interpolation_step)
     # Calculate the difference between the first and second model at specific epochs
     model_difference = {epoch: second_interpolator.interpolate(epoch) - first_interpolator.interpolate(epoch)
-                        for epoch in output_epochs}
+                        for epoch in interpolation_epochs}
     # Write results to files
     if output_path is not None:
         save2txt(model_difference,
                  filename,
                  output_path)
-    # Return the interpolator
+    # Return the model difference
     return model_difference
