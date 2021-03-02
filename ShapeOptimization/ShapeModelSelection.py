@@ -65,6 +65,7 @@ the variable write_results_to_file is true.
 
 # General imports
 import os
+import numpy as np
 
 # Tudatpy imports
 from tudatpy.io import save2txt
@@ -96,6 +97,7 @@ shape_parameters = [8.148730872315355,
 write_results_to_file = True
 # Get path of current directory
 current_dir = os.path.dirname(__file__)
+output_interpolation_step = 10.0
 
 ###########################################################################
 # DEFINE SIMULATION SETTINGS ##############################################
@@ -166,7 +168,7 @@ for model_test in range(5):
     if model_test == 1:
         acceleration_settings_on_vehicle['Earth'][0] = propagation_setup.acceleration.point_mass_gravity()
     elif model_test == 2:
-        acceleration_settings_on_vehicle['Earth'][0] = propagation_setup.acceleration.spherical_harmonic_gravity(2, 2)
+        acceleration_settings_on_vehicle['Earth'][0] = propagation_setup.acceleration.spherical_harmonic_gravity(4, 4)
 
     # Create global accelerations' dictionary
     acceleration_settings = {'Capsule': acceleration_settings_on_vehicle}
@@ -217,6 +219,8 @@ for model_test in range(5):
     # Retrieve propagated state and dependent variables
     state_history = current_shape_optimization_problem.get_last_run_propagated_cartesian_state_history()
     dependent_variable_history = current_shape_optimization_problem.get_last_run_dependent_variable_history()
+    propagation_times = list(state_history.keys())
+    limit_times = {propagation_times[3]: propagation_times[len(propagation_times)-4]}
 
     # Get output path
     if model_test == 0:
@@ -229,19 +233,24 @@ for model_test in range(5):
     if write_results_to_file:
         save2txt(state_history, 'state_history.dat', output_path)
         save2txt(dependent_variable_history, 'dependent_variable_history.dat', output_path)
+        save2txt(limit_times, 'limit_times.dat', output_path)
 
     # Create interpolator to compare the nominal case with other settings
+    interpolator_settings = interpolators.lagrange_interpolation(8,boundary_interpolation=interpolators.use_boundary_value)
     if (model_test == 0):
-        nominal_interpolator_settings = interpolators.lagrange_interpolation(8)
         nominal_state_interpolator = interpolators.create_one_dimensional_interpolator(
-            state_history, nominal_interpolator_settings)
+            state_history, interpolator_settings)
         nominal_dependent_variable_interpolator = interpolators.create_one_dimensional_interpolator(
-            dependent_variable_history, nominal_interpolator_settings)
+            dependent_variable_history, interpolator_settings)
     # Compare current model with nominal case
     else:
+        interpolation_times = np.arange(propagation_times[0], propagation_times[-1], output_interpolation_step)
+        state_interpolator = interpolators.create_one_dimensional_interpolator(
+            state_history, interpolator_settings)
+
         state_difference = dict()
-        for epoch in state_history.keys():
-            state_difference[epoch] = state_history[epoch] - nominal_state_interpolator.interpolate(epoch)
+        for epoch in interpolation_times:
+            state_difference[epoch] = state_interpolator.interpolate(epoch) - nominal_state_interpolator.interpolate(epoch)
         dependent_difference = dict()
         # Loop over the propagated dependent variables and use the benchmark interpolators
         for epoch in dependent_variable_history.keys():

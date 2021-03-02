@@ -32,8 +32,8 @@ The propagation is terminated as soon as one of the following conditions is met:
 Both the translational dynamics and mass of the vehicle are propagated, using a fixed specific impulse.
 The accelerations currently considered are as follows:
 
-0. thrust and Lunar point mass gravity (NOMINAL CASE)
-1. thrust and Lunar spherical harmonic gravity (up to order 2 and degree 2)
+0. thrust and Lunar spherical harmonic gravity (up to order 2 and degree 2) (NOMINAL CASE)
+1. thrust and Lunar point mass gravity
 2. thrust and Lunar spherical harmonic gravity (up to order 4 and degree 4)
 3. thrust, Lunar point mass gravity and Earth's point mass gravity
 4. thrust and Lunar point mass gravity, with different Lunar ephemeris (generated through the unperturbed Earth-Moon
@@ -170,14 +170,14 @@ for model_test in range(5):
                                                                   bodies,
                                                                   simulation_start_epoch,
                                                                   constant_specific_impulse)],
-        'Moon': [propagation_setup.acceleration.point_mass_gravity()]}
+        'Moon': [propagation_setup.acceleration.spherical_harmonic_gravity(2,2)]}
 
     # Here, model settings are modified
     if model_test == 1:
-        acceleration_settings_on_vehicle['Moon'] = [propagation_setup.acceleration.spherical_harmonic_gravity(4, 4)]
+        acceleration_settings_on_vehicle['Moon'] = [propagation_setup.acceleration.point_mass_gravity()]
     elif model_test == 2:
         acceleration_settings_on_vehicle['Moon'] = [propagation_setup.acceleration.spherical_harmonic_gravity(4, 4)]
-    elif model_test == 3:
+    elif( model_test == 3 or model_test == 4 ):
         acceleration_settings_on_vehicle['Earth'] = [propagation_setup.acceleration.point_mass_gravity()]
 
     # Create global accelerations dictionary
@@ -260,7 +260,7 @@ for model_test in range(5):
 
     # Create interpolator to compare the nominal case with other settings
     if (model_test == 0):
-        nominal_interpolator_settings = interpolators.lagrange_interpolation(8)
+        nominal_interpolator_settings = interpolators.lagrange_interpolation(8,boundary_interpolation=interpolators.use_boundary_value)
         nominal_state_interpolator = interpolators.create_one_dimensional_interpolator(
             state_history, nominal_interpolator_settings)
         nominal_dependent_variable_interpolator = interpolators.create_one_dimensional_interpolator(

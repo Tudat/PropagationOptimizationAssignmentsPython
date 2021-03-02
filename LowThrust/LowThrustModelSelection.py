@@ -107,7 +107,7 @@ trajectory_parameters = [570727221.2273525 / constants.JULIAN_DAY,
                          8748.139268525232,
                          -3449.838496679572]
 # Choose whether output of the propagation is written to files
-write_results_to_file = False
+write_results_to_file = True
 # Get path of current directory
 current_dir = os.path.dirname(__file__)
 
@@ -298,7 +298,7 @@ for model_test in range(5):
 
     # Create interpolator to compare the nominal case with other settings
     if model_test == 0:
-        nominal_interpolator_settings = interpolators.lagrange_interpolation(8)
+        nominal_interpolator_settings = interpolators.lagrange_interpolation(8,boundary_interpolation=interpolators.use_boundary_value)
         nominal_state_interpolator = interpolators.create_one_dimensional_interpolator(
             state_history, nominal_interpolator_settings)
         nominal_dependent_variable_interpolator = interpolators.create_one_dimensional_interpolator(
