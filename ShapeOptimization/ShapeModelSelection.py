@@ -102,7 +102,13 @@ output_interpolation_step = 10.0
 ###########################################################################
 # DEFINE SIMULATION SETTINGS ##############################################
 ###########################################################################
-for model_test in range(5):
+
+# Initialize dictionary to save simulation output
+simulation_results = dict()
+number_of_models = 5
+
+# Loop over different model settings
+for model_test in range(number_of_models):
 
     # Set termination conditions
     maximum_duration = constants.JULIAN_DAY  # s
@@ -134,8 +140,8 @@ for model_test in range(5):
         global_frame_orientation)
     # For case 3, a different rotational model is used for the Earth
     if model_test == 3:
-        body_settings.get( 'Earth' ).rotation_model_settings = environment_setup.rotation_model.simple_from_spice(
-	        global_frame_orientation, 'IAU_Earth', 'IAU_Earth', simulation_start_epoch)
+        body_settings.get('Earth').rotation_model_settings = environment_setup.rotation_model.simple_from_spice(
+            global_frame_orientation, 'IAU_Earth', 'IAU_Earth', simulation_start_epoch)
     # For case 4, a different atmospheric model is used
     if model_test == 4:
         density_scale_height = 7.2E3
@@ -219,15 +225,25 @@ for model_test in range(5):
     # Retrieve propagated state and dependent variables
     state_history = current_shape_optimization_problem.get_last_run_propagated_cartesian_state_history()
     dependent_variable_history = current_shape_optimization_problem.get_last_run_dependent_variable_history()
+
+    # Save results to a dictionary
+    simulation_results[model_test] = [state_history, dependent_variable_history]
+
+    # Set time limits to avoid numerical issues at the boundaries due to the interpolation
     propagation_times = list(state_history.keys())
-    limit_times = {propagation_times[3]: propagation_times[len(propagation_times)-4]}
+    limit_times = {propagation_times[3]: propagation_times[-3]}
 
     # Get output path
     if model_test == 0:
         subdirectory = '/NominalCase/'
     else:
         subdirectory = '/Model_' + str(model_test) + '/'
-    output_path = current_dir + subdirectory
+
+    # Decide if output writing is required
+    if write_results_to_file:
+        output_path = current_dir + subdirectory
+    else:
+        output_path = None
 
     # If desired, write output to a file
     if write_results_to_file:
@@ -235,28 +251,26 @@ for model_test in range(5):
         save2txt(dependent_variable_history, 'dependent_variable_history.dat', output_path)
         save2txt(limit_times, 'limit_times.dat', output_path)
 
-    # Create interpolator to compare the nominal case with other settings
-    interpolator_settings = interpolators.lagrange_interpolation(8,boundary_interpolation=interpolators.use_boundary_value)
-    if (model_test == 0):
-        nominal_state_interpolator = interpolators.create_one_dimensional_interpolator(
-            state_history, interpolator_settings)
-        nominal_dependent_variable_interpolator = interpolators.create_one_dimensional_interpolator(
-            dependent_variable_history, interpolator_settings)
-    # Compare current model with nominal case
-    else:
-        interpolation_times = np.arange(propagation_times[0], propagation_times[-1], output_interpolation_step)
-        state_interpolator = interpolators.create_one_dimensional_interpolator(
-            state_history, interpolator_settings)
-
-        state_difference = dict()
-        for epoch in interpolation_times:
-            state_difference[epoch] = state_interpolator.interpolate(epoch) - nominal_state_interpolator.interpolate(epoch)
-        dependent_difference = dict()
-        # Loop over the propagated dependent variables and use the benchmark interpolators
-        for epoch in dependent_variable_history.keys():
-            dependent_difference[epoch] = dependent_variable_history[
-                                              epoch] - nominal_dependent_variable_interpolator.interpolate(epoch)
-        # If desired, write differences to files
-        if write_results_to_file:
-            save2txt(state_difference, 'state_difference.dat', output_path)
-            save2txt(dependent_difference, 'dependent_variable_difference.dat', output_path)
+"""
+NOTE TO STUDENTS
+The first index of the dictionary simulation_results refers to the model case, while the second index can be 0 (states)
+or 1 (dependent variables).
+You can use this dictonary to make all the cross-comparison that you deem necessary. The code below currently compares
+every case with respect to the "nominal" one.
+"""
+# Compare all the model settings with the nominal case
+for model_test in range(1, number_of_models):
+    # Get output path
+    output_path = current_dir + '/Model_' + str(model_test) + '/'
+    # Compare state history
+    state_difference_wrt_nominal = Util.compare_models(simulation_results[0][0],
+                                                       simulation_results[model_test][0],
+                                                       output_interpolation_step,
+                                                       output_path,
+                                                       'state_difference_wrt_nominal_case.dat')
+    # Compare dependent variable history
+    dependent_variable_difference_wrt_nominal = Util.compare_models(simulation_results[0][1],
+                                                                    simulation_results[model_test][1],
+                                                                    output_interpolation_step,
+                                                                    output_path,
+                                                                    'dependent_variable_difference_wrt_nominal_case.dat')

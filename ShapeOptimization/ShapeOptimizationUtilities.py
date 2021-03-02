@@ -36,6 +36,7 @@ from tudatpy.kernel.math import interpolators
 # Problem-specific imports
 from ShapeOptimizationProblem import ShapeOptimizationProblem
 
+
 ###########################################################################
 # USEFUL FUNCTIONS ########################################################
 ###########################################################################
@@ -79,18 +80,19 @@ def get_initial_state(simulation_start_epoch: float,
 
     # Convert spherical elements to body-fixed cartesian coordinates
     initial_cartesian_state_body_fixed = conversion.spherical_to_cartesian(radial_distance,
-                                                                latitude,
-                                                                longitude,
-                                                                speed,
-                                                                flight_path_angle,
-                                                                heading_angle)
+                                                                           latitude,
+                                                                           longitude,
+                                                                           speed,
+                                                                           flight_path_angle,
+                                                                           heading_angle)
     # Get rotational ephemerides of the Earth
     earth_rotational_model = bodies.get_body('Earth').rotation_model
     # Transform the state to the global (inertial) frame
     initial_cartesian_state_inertial = conversion.transform_to_inertial_orientation(initial_cartesian_state_body_fixed,
-                                                                                      simulation_start_epoch,
-                                                                                      earth_rotational_model)
+                                                                                    simulation_start_epoch,
+                                                                                    earth_rotational_model)
     return initial_cartesian_state_inertial
+
 
 def get_termination_settings(simulation_start_epoch: float,
                              maximum_duration: float,
@@ -221,12 +223,12 @@ def get_integrator_settings(propagator_index: int,
         # Here (epsilon, inf) are set as respectively min and max step sizes
         # also note that the relative and absolute tolerances are the same value
         integrator_settings = integrator.runge_kutta_variable_step_size(simulation_start_epoch,
-                                                                                          1.0,
-                                                                                          current_coefficient_set,
-                                                                                          np.finfo(float).eps,
-                                                                                          np.inf,
-                                                                                          current_tolerance,
-                                                                                          current_tolerance)
+                                                                        1.0,
+                                                                        current_coefficient_set,
+                                                                        np.finfo(float).eps,
+                                                                        np.inf,
+                                                                        current_tolerance,
+                                                                        current_tolerance)
     # Use fixed step-size integrator
     else:
         # Compute time step
@@ -344,8 +346,8 @@ def generate_benchmarks(benchmark_step_size,
         second_benchmark_dependent_variable = second_benchmark.get_last_run_dependent_variable_history()
         # Write results to file
         if output_path is not None:
-            save2txt(first_benchmark_dependent_variable, 'benchmark_1_dependent_variables.dat',  output_path)
-            save2txt(second_benchmark_dependent_variable,  'benchmark_2_dependent_variables.dat',  output_path)
+            save2txt(first_benchmark_dependent_variable, 'benchmark_1_dependent_variables.dat', output_path)
+            save2txt(second_benchmark_dependent_variable, 'benchmark_2_dependent_variables.dat', output_path)
         # Add items to be returned
         return_list.append(first_benchmark_dependent_variable)
         return_list.append(second_benchmark_dependent_variable)
@@ -390,7 +392,7 @@ def compare_benchmarks(first_benchmark: dict,
     # Calculate the difference between the states and dependent variables in an iterative manner
     for second_epoch in second_benchmark.keys():
         benchmark_difference[second_epoch] = benchmark_interpolator.interpolate(second_epoch) - \
-                                         second_benchmark[second_epoch]
+                                             second_benchmark[second_epoch]
     # Write results to files
     if output_path is not None:
         save2txt(benchmark_difference,
@@ -398,3 +400,56 @@ def compare_benchmarks(first_benchmark: dict,
                  output_path)
     # Return the interpolator
     return benchmark_difference
+
+
+def compare_models(first_model: dict,
+                   second_model: dict,
+                   interpolation_step: float,
+                   output_path: str,
+                   filename: str) -> dict:
+    """
+    It compares the results of two runs with different model settings.
+
+    It uses an 8th-order Lagrange interpolator to compare the state (or the dependent variable, depending on what is
+    given as input) history. The difference is returned in form of a dictionary and, if desired, written to a file named
+    filename and placed in the directory output_path.
+
+    Parameters
+    ----------
+    first_model : dict
+        State (or dependent variable history) from the first run.
+    second_model : dict
+        State (or dependent variable history) from the second run.
+    interpolation_step : float
+        Time step at which the two runs are compared.
+    output_path : str
+        If and where to save the benchmark results (if None, results are NOT written).
+    filename : str
+        Name of the output file.
+
+    Returns
+    -------
+    model_difference : dict
+        Interpolated difference between the two simulations' state (or dependent variable) history.
+    """
+    # Create interpolator settings
+    interpolator_settings = interpolators.lagrange_interpolation(8,
+                                                                 boundary_interpolation=interpolators.use_boundary_value)
+    # Create 8th-order Lagrange interpolator for both cases
+    first_interpolator = interpolators.create_one_dimensional_interpolator(first_model,
+                                                                           interpolator_settings)
+    second_interpolator = interpolators.create_one_dimensional_interpolator(second_model,
+                                                                            interpolator_settings)
+    # Create vector of epochs to be compared (boundaries are referred to the first case)
+    first_model_epochs = list(first_model.keys())
+    output_epochs = np.arange(first_model_epochs[0], first_model_epochs[-1], interpolation_step)
+    # Calculate the difference between the first and second model at specific epochs
+    model_difference = {epoch: second_interpolator.interpolate(epoch) - first_interpolator.interpolate(epoch)
+                        for epoch in output_epochs}
+    # Write results to files
+    if output_path is not None:
+        save2txt(model_difference,
+                 filename,
+                 output_path)
+    # Return the interpolator
+    return model_difference
