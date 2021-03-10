@@ -467,7 +467,8 @@ class LowThrustProblem:
                  specific_impulse: float,
                  minimum_mars_distance: float,
                  time_buffer: float,
-                 perform_propagation: bool = True):
+                 perform_propagation: bool = True,
+                 initial_state_perturbation: np.array = np.zeros((6,))):
         """
         Constructor for the LowThrustProblem class.
 
@@ -487,6 +488,8 @@ class LowThrustProblem:
             Time interval between the simulation start epoch and the beginning of the hodographic trajectory.
         perform_propagation : bool (default: True)
             If true, the propagation is performed.
+        initial_state_perturbation : np.array (default: vector of zeros)
+            The perturbation on the initial state.
 
         Returns
         -------
@@ -500,6 +503,7 @@ class LowThrustProblem:
         self.minimum_mars_distance = minimum_mars_distance
         self.time_buffer = time_buffer
         self.perform_propagation = perform_propagation
+        self.initial_state_perturbation = initial_state_perturbation
         # Extract translational state propagator settings from the full propagator settings
         if perform_propagation:
             self.translational_state_propagator_settings = propagator_settings.single_type_settings(
@@ -616,6 +620,9 @@ class LowThrustProblem:
             new_initial_state = get_hodograph_state_at_epoch(trajectory_parameters,
                                                              self.bodies,
                                                              initial_propagation_time)
+            # Apply perturbation
+            new_initial_state += self.initial_state_perturbation
+
             # Update translational propagator settings: initial state
             self.translational_state_propagator_settings.reset_initial_states(new_initial_state)
             # Update full propagator settings

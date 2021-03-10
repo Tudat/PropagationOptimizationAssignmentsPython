@@ -282,14 +282,17 @@ for model_test in range(number_of_models):
                                                                0,
                                                                0,
                                                                initial_propagation_time)
-    # Create Lunar Ascent Problem object
+    # Define initial state uncertainty
+    initial_state_perturbation = np.zeros((6,))
+    # Create Low Thrust Problem object
     current_low_thrust_problem = LowThrustProblem(bodies,
                                                   current_integrator_settings,
                                                   full_propagation_settings,
                                                   specific_impulse,
                                                   minimum_mars_distance,
                                                   time_buffer,
-                                                  True)
+                                                  True,
+                                                  initial_state_perturbation)
     # Update thrust settings and evaluate fitness
     current_low_thrust_problem.fitness(trajectory_parameters)
 

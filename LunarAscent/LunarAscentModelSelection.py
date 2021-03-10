@@ -34,9 +34,9 @@ The accelerations currently considered are as follows:
 
 0. thrust and Lunar spherical harmonic gravity up to order 2 and degree 2 (NOMINAL CASE)
 1. thrust and Lunar point mass gravity
-2. thrust and Lunar spherical harmonic gravity (up to order 4 and degree 4)
-3. thrust, Lunar point mass gravity and Earth's point mass gravity
-4. thrust and Lunar point mass gravity, with different Lunar ephemeris (generated through the unperturbed Earth-Moon
+2. thrust and Lunar spherical harmonic gravity up to order 4 and degree 4
+3. like the nominal case, but with the addition of Earth's point mass gravity
+4. like case 3, but with different Earth ephemeris (generated through the unperturbed Earth-Moon
 two-body problem)
 
 The thrust is computed based on a fixed thrust magnitude, and a variable thrust direction. The trust direction is defined
