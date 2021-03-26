@@ -272,7 +272,8 @@ class ShapeOptimizationProblem:
                  bodies,
                  integrator_settings,
                  propagator_settings,
-                 capsule_density):
+                 capsule_density,
+                 decision_variable_range):
         """
         Constructor for the ShapeOptimizationProblem class.
 
@@ -292,10 +293,12 @@ class ShapeOptimizationProblem:
         none
         """
         # Set arguments as attributes
-        self.bodies = bodies
-        self.integrator_settings = integrator_settings
-        self.propagator_settings = propagator_settings
+        self.bodies_function = lambda : bodies
+        self.integrator_settings_function = lambda : integrator_settings
+        self.propagator_settings_function = lambda : propagator_settings
         self.capsule_density = capsule_density
+        self.decision_variable_range = decision_variable_range
+
 
     def get_last_run_propagated_cartesian_state_history(self) -> dict:
         """
@@ -309,7 +312,7 @@ class ShapeOptimizationProblem:
         -------
         dict
         """
-        return self.dynamics_simulator.get_equations_of_motion_numerical_solution()
+        return self.dynamics_simulator_function( ).get_equations_of_motion_numerical_solution()
 
     def get_last_run_propagated_state_history(self) -> dict:
         """
@@ -324,7 +327,11 @@ class ShapeOptimizationProblem:
         -------
         dict
         """
-        return self.dynamics_simulator.get_equations_of_motion_numerical_solution_raw()
+        return self.dynamics_simulator_function( ).get_equations_of_motion_numerical_solution_raw()
+
+    def get_bounds(self):
+
+        return self.decision_variable_range
 
     def get_last_run_dependent_variable_history(self) -> dict:
         """
@@ -338,7 +345,7 @@ class ShapeOptimizationProblem:
         -------
         dict
         """
-        return self.dynamics_simulator.get_dependent_variable_history()
+        return self.dynamics_simulator_function( ).get_dependent_variable_history()
 
     def get_last_run_dynamics_simulator(self):
         """
@@ -352,7 +359,7 @@ class ShapeOptimizationProblem:
         -------
         tudatpy.kernel.simulation.propagation_setup.SingleArcDynamicsSimulator
         """
-        return self.dynamics_simulator
+        return self.dynamics_simulator_function( )
 
     def fitness(self,
                 shape_parameters):
@@ -373,31 +380,36 @@ class ShapeOptimizationProblem:
         fitness : float
             Fitness value (for optimization, see assignment 3).
         """
+        bodies = self.bodies_function()
+        integrator_settings = self.integrator_settings_function()
+        propagator_settings = self.propagator_settings_function()
 
         # Delete existing capsule
-        self.bodies.delete_body('Capsule')
+        bodies.delete_body('Capsule')
         # Create new capsule with a new coefficient interface based on the current parameters, add it to the body system
-        add_capsule_to_body_system(self.bodies,
+        add_capsule_to_body_system(bodies,
                                    shape_parameters,
                                    self.capsule_density)
 
         # Update propagation model with new body shape
-        self.propagator_settings.recreate_state_derivative_models(self.bodies)
+        propagator_settings.recreate_state_derivative_models(bodies)
 
         # Create new aerodynamic guidance
-        guidance_object = CapsuleAerodynamicGuidance(self.bodies,
+        guidance_object = CapsuleAerodynamicGuidance(bodies,
                                                      shape_parameters[5])
         # Set aerodynamic guidance (this line links the CapsuleAerodynamicGuidance settings with the propagation)
         environment_setup.set_aerodynamic_guidance(guidance_object,
-                                                   self.bodies.get_body('Capsule'))
+                                                   bodies.get_body('Capsule'))
 
         # Create simulation object and propagate dynamics
-        self.dynamics_simulator = propagation_setup.SingleArcDynamicsSimulator(
-            self.bodies,
-            self.integrator_settings,
-            self.propagator_settings,
-            True)
+        dynamics_simulator = propagation_setup.SingleArcDynamicsSimulator(
+            bodies,
+            integrator_settings,
+            propagator_settings,
+            print_dependent_variable_data = False)
+
+        self.dynamics_simulator_function = lambda: dynamics_simulator
 
         # For the first two assignments, no computation of fitness is needed
         fitness = 0.0
-        return fitness
+        return [fitness]

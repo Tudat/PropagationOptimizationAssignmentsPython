@@ -67,7 +67,8 @@ class LunarAscentProblem:
                  integrator_settings: tudatpy.kernel.simulation.propagation_setup.integrator.IntegratorSettings,
                  propagator_settings: tudatpy.kernel.simulation.propagation_setup.propagator.MultiTypePropagatorSettings,
                  constant_specific_impulse: float,
-                 simulation_start_epoch: float):
+                 simulation_start_epoch: float,
+                 decision_variable_range):
         """
         Constructor for the LunarAscentProblem class.
 
@@ -89,14 +90,20 @@ class LunarAscentProblem:
         none
         """
         # Set attributes
-        self.bodies = bodies
-        self.integrator_settings = integrator_settings
-        self.propagator_settings = propagator_settings
+        self.bodies_function = lambda : bodies
+        self.integrator_settings_function = lambda :integrator_settings
+        self.propagator_settings_function = lambda :propagator_settings
         self.constant_specific_impulse = constant_specific_impulse
         self.simulation_start_epoch = simulation_start_epoch
+        self.decision_variable_range = decision_variable_range
+
         # Extract translational state propagator settings from the full propagator settings
         translational_type = propagation_setup.StateType.translational_type
-        self.translational_state_propagator_settings = propagator_settings.single_type_settings(translational_type)
+        self.translational_state_propagator_settings_function = lambda :propagator_settings.single_type_settings(translational_type)
+
+    def get_bounds(self):
+
+        return self.decision_variable_range
 
     def get_last_run_propagated_cartesian_state_history(self) -> dict:
         """
@@ -110,7 +117,7 @@ class LunarAscentProblem:
         -------
         dict
         """
-        return self.dynamics_simulator.get_equations_of_motion_numerical_solution()
+        return self.dynamics_simulator_function( ).get_equations_of_motion_numerical_solution()
 
     def get_last_run_propagated_state_history(self) -> dict:
         """
@@ -125,7 +132,7 @@ class LunarAscentProblem:
         -------
         dict
         """
-        return self.dynamics_simulator.get_equations_of_motion_numerical_solution_raw()
+        return self.dynamics_simulator_function( ).get_equations_of_motion_numerical_solution_raw()
 
     def get_last_run_dependent_variable_history(self) -> dict:
         """
@@ -139,7 +146,7 @@ class LunarAscentProblem:
         -------
         dict
         """
-        return self.dynamics_simulator.get_dependent_variable_history()
+        return self.dynamics_simulator_function( ).get_dependent_variable_history()
 
     def get_last_run_dynamics_simulator(self) -> tudatpy.kernel.simulation.propagation_setup.SingleArcDynamicsSimulator:
         """
@@ -153,7 +160,7 @@ class LunarAscentProblem:
         -------
         tudatpy.kernel.simulation.propagation_setup.SingleArcDynamicsSimulator
         """
-        return self.dynamics_simulator
+        return self.dynamics_simulator_function( )
 
     def fitness(self,
                 thrust_parameters: list) -> float:
@@ -174,30 +181,38 @@ class LunarAscentProblem:
         fitness : float
             Fitness value (for optimization, see assignment 3).
         """
+
+        bodies = self.bodies_function()
+        integrator_settings = self.integrator_settings_function()
+        translational_state_propagator_settings = self.translational_state_propagator_settings_function()
+        propagator_settings = self.propagator_settings_function()
+
         # Retrieve the accelerations from the translational state propagator
-        acceleration_settings = self.translational_state_propagator_settings.acceleration_settings
+        acceleration_settings = translational_state_propagator_settings.acceleration_settings
         # Clear the existing thrust acceleration
         acceleration_settings['Vehicle']['Vehicle'].clear()
         # Get the new thrust settings
         new_thrust_settings = get_thrust_acceleration_model_from_parameters(thrust_parameters,
-                                                                            self.bodies,
+                                                                            bodies,
                                                                             self.simulation_start_epoch,
                                                                             self.constant_specific_impulse)
         # Set new acceleration settings
         acceleration_settings['Vehicle']['Vehicle'].append(new_thrust_settings)
         # Update translational propagator settings
-        self.translational_state_propagator_settings.reset_and_recreate_acceleration_models(acceleration_settings,
-                                                                                            self.bodies)
+        translational_state_propagator_settings.reset_and_recreate_acceleration_models(acceleration_settings,
+                                                                                            bodies)
         # Update full propagator settings
-        self.propagator_settings.recreate_state_derivative_models(self.bodies)
+        propagator_settings.recreate_state_derivative_models(bodies)
         # Create simulation object and propagate dynamics
-        self.dynamics_simulator = propagation_setup.SingleArcDynamicsSimulator(self.bodies,
-                                                                               self.integrator_settings,
-                                                                               self.propagator_settings,
-                                                                               True)
+        dynamics_simulator = propagation_setup.SingleArcDynamicsSimulator(bodies,
+                                                                               integrator_settings,
+                                                                               propagator_settings,
+                                                                               print_dependent_variable_data = False)
+        self.dynamics_simulator_function = lambda: dynamics_simulator
+
         # For the first two assignments, no computation of fitness is needed
         fitness = 0.0
-        return fitness
+        return [fitness]
 
 
 ###########################################################################
@@ -240,7 +255,6 @@ class LunarAscentThrustGuidance:
         -------
         none
         """
-        print('Initializing guidance...')
         # Set arguments as attributes
         self.vehicle_body = vehicle_body
         self.initial_time = initial_time

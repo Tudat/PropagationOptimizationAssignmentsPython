@@ -25,6 +25,7 @@ optimization is executed.
 # General imports
 import numpy as np
 
+
 # Tudatpy imports
 import tudatpy
 from tudatpy.io import save2txt
@@ -467,6 +468,7 @@ class LowThrustProblem:
                  specific_impulse: float,
                  minimum_mars_distance: float,
                  time_buffer: float,
+                 decision_variable_range,
                  perform_propagation: bool = True):
         """
         Constructor for the LowThrustProblem class.
@@ -493,17 +495,22 @@ class LowThrustProblem:
         none
         """
         # Copy arguments as attributes
-        self.bodies = bodies
-        self.integrator_settings = integrator_settings
-        self.propagator_settings = propagator_settings
+        self.bodies_function = lambda : bodies
+        self.integrator_settings_function = lambda : integrator_settings
+        self.propagator_settings_function = lambda : propagator_settings
         self.specific_impulse = specific_impulse
         self.minimum_mars_distance = minimum_mars_distance
         self.time_buffer = time_buffer
+        self.decision_variable_range = decision_variable_range
         self.perform_propagation = perform_propagation
         # Extract translational state propagator settings from the full propagator settings
         if perform_propagation:
-            self.translational_state_propagator_settings = propagator_settings.single_type_settings(
+            self.translational_state_propagator_settings_function = lambda : propagator_settings.single_type_settings(
                 propagation_setup.translational_type)
+
+    def get_bounds(self):
+
+        return self.decision_variable_range
 
     def get_last_run_propagated_cartesian_state_history(self) -> dict:
         """
@@ -582,16 +589,23 @@ class LowThrustProblem:
             Fitness value (for optimization, see assignment 3).
         """
         # Create hodographic shaping object
-        self.hodographic_shaping = create_hodographic_shaping_object(trajectory_parameters,
-                                                                     self.bodies)
+        bodies = self.bodies_function()
+        hodographic_shaping = create_hodographic_shaping_object(trajectory_parameters,
+                                                                     bodies)
+        self.hodographic_shaping_function = lambda : hodographic_shaping
         # Propagate trajectory only if required
         if self.perform_propagation:
+
+            integrator_settings = self.integrator_settings_function( )
+            translational_state_propagator_settings = self.translational_state_propagator_settings_function( )
+            propagator_settings = self.propagator_settings_function( )
+
             initial_propagation_time = get_trajectory_initial_time(trajectory_parameters,
                                                                    self.time_buffer)
             # Reset initial time
-            self.integrator_settings.initial_time = initial_propagation_time
+            integrator_settings.initial_time = initial_propagation_time
             # Retrieve the accelerations from the translational state propagator
-            acceleration_settings = self.translational_state_propagator_settings.acceleration_settings
+            acceleration_settings = translational_state_propagator_settings.acceleration_settings
             # Clear the existing thrust acceleration
             acceleration_settings['Vehicle']['Vehicle'].clear()
             # Create specific impulse lambda function
@@ -602,40 +616,42 @@ class LowThrustProblem:
             time_offset = get_trajectory_initial_time(trajectory_parameters)
             # Retrieve new thrust settings
             new_thrust_settings = shape_based_thrust.get_low_thrust_acceleration_settings(
-                self.hodographic_shaping,
-                self.bodies,
+                hodographic_shaping,
+                bodies,
                 'Vehicle',
                 specific_impulse_function,
                 time_offset)
             # Set new acceleration settings
             acceleration_settings['Vehicle']['Vehicle'].append(new_thrust_settings)
             # Update translational propagator settings: accelerations
-            self.translational_state_propagator_settings.reset_and_recreate_acceleration_models(acceleration_settings,
-                                                                                                self.bodies)
+            translational_state_propagator_settings.reset_and_recreate_acceleration_models(acceleration_settings,
+                                                                                                bodies)
             # Retrieve initial state
             new_initial_state = get_hodograph_state_at_epoch(trajectory_parameters,
-                                                             self.bodies,
+                                                             bodies,
                                                              initial_propagation_time)
             # Update translational propagator settings: initial state
-            self.translational_state_propagator_settings.reset_initial_states(new_initial_state)
+            translational_state_propagator_settings.reset_initial_states(new_initial_state)
             # Update full propagator settings
-            self.propagator_settings.recreate_state_derivative_models(self.bodies)
+            propagator_settings.recreate_state_derivative_models(bodies)
             # Reset full initial state
             new_full_initial_state = propagation_setup.propagator.combine_initial_states(
-                self.propagator_settings.propagator_settings_per_type)
-            self.propagator_settings.reset_initial_states(new_full_initial_state)
+                propagator_settings.propagator_settings_per_type)
+            propagator_settings.reset_initial_states(new_full_initial_state)
             # Get the termination settings
-            self.propagator_settings.termination_settings = Util.get_termination_settings(trajectory_parameters,
+            propagator_settings.termination_settings = Util.get_termination_settings(trajectory_parameters,
                                                                                           self.minimum_mars_distance,
                                                                                           self.time_buffer)
             # Create simulation object and propagate dynamics
-            self.dynamics_simulator = propagation_setup.SingleArcDynamicsSimulator(self.bodies,
-                                                                                   self.integrator_settings,
-                                                                                   self.propagator_settings,
-                                                                                   True)
+            dynamics_simulator = propagation_setup.SingleArcDynamicsSimulator(bodies,
+                                                                              integrator_settings,
+                                                                              propagator_settings,
+                                                                              print_dependent_variable_data = False)
+
+            self.dynamics_simulator_function = lambda : dynamics_simulator
         # For the first two assignments, no computation of fitness is needed
-        fitness = 0.0
-        return fitness
+        fitness = hodographic_shaping.compute_delta_v( )
+        return [fitness]
 
     def get_hodographic_shaping(self):
         """
@@ -649,4 +665,4 @@ class LowThrustProblem:
         -------
         tudatpy.kernel.simulation.shape_based_thrust.HodographicShaping
         """
-        return self.hodographic_shaping
+        return self.hodographic_shaping_function( )
