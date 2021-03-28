@@ -102,9 +102,8 @@ def get_termination_settings(simulation_start_epoch: float,
     Get the termination settings for the simulation.
 
     Termination settings currently include:
-    - simulation time (one day)
+    - simulation time
     - lower and upper altitude boundaries (0-100 km)
-    - fuel run-out
 
     Parameters
     ----------
