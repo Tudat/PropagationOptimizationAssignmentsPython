@@ -17,8 +17,7 @@ Student number: ***COMPLETE HERE***
 This module is the main script that executes the propagation and optimization. It relies on two other modules, defined
 for a more practical organization of functions and classes, which are imported below.
 
-This function computes the dynamics of a lunar ascent vehicle, starting at zero velocity on the Moon's surface, using a
-variety of model settings (see below).
+This function computes the dynamics of a lunar ascent vehicle, starting at zero velocity on the Moon's surface.
  
 The propagation starts near the lunar surface, with a speed relative to the Moon of 10 m/s.
 
@@ -30,14 +29,8 @@ The propagation is terminated as soon as one of the following conditions is met:
 * Vehicle mass < 2250 kg
 
 Both the translational dynamics and mass of the vehicle are propagated, using a fixed specific impulse.
-The accelerations currently considered are as follows:
-
-0. thrust and Lunar spherical harmonic gravity up to order 2 and degree 2 (NOMINAL CASE)
-1. thrust and Lunar point mass gravity
-2. thrust and Lunar spherical harmonic gravity (up to order 4 and degree 4)
-3. thrust, Lunar point mass gravity and Earth's point mass gravity
-4. thrust and Lunar point mass gravity, with different Lunar ephemeris (generated through the unperturbed Earth-Moon
-two-body problem)
+Only the thrust acceleration is currently included. It is up to you to modify the dynamical model based on the results
+of assignment 2.
 
 The thrust is computed based on a fixed thrust magnitude, and a variable thrust direction. The trust direction is defined
 on a set of 5 nodes, spread evenly in time. At each node, a thrust angle theta is defined, which gives the angle between
@@ -55,15 +48,8 @@ and integrator settings corresponding to the indices 0 and 0 are used, in combin
 the combination of integrator and propagator settings that you deem the most suitable, based on the results of
 assignment 1.
 
-The script saves the state and dependent variable history for each model settings. In addition, a single file called
-'limit_values.dat' is saved with the minimum and maximum time outside which numerical interpolation errors may affect
-your comparison. It is up to you whether cutting value outside of that temporal interval during the post-processing.
-Finally, outside of the main for loop, the differences in state and dependent variable history with respect to the
-nominal case are also written to files. The two are compared at discrete epochs generated with a fixed step size
-(see variable output_interpolation_step) valid for all cases. The function compare_models is designed to make
-other cross-comparisons possible (e.g. model 2 vs model 3).
-
-The output is written if the variable write_results_to_file is true.
+The last part of the code runs the optimization problem with PyGMO. For more information, see:
+https://tudat-space.readthedocs.io/en/latest/_src_examples/pygmo_basics.html.
 """
 
 ###########################################################################
@@ -133,7 +119,6 @@ spice_interface.load_standard_kernels()
 # Initialize dictionary to save simulation output
 simulation_results = dict()
 
-
 bodies_to_create = ['Moon', 'Earth', 'Sun']
 # Define coordinate system
 global_frame_origin = 'Moon'
@@ -148,16 +133,20 @@ body_settings = environment_setup.get_default_body_settings(
     global_frame_orientation)
 # Create bodies
 bodies = environment_setup.create_system_of_bodies(body_settings)
+
 ###########################################################################
 # CREATE VEHICLE ##########################################################
 ###########################################################################
+
 # Create vehicle object and add it to the existing system of bodies
 bodies.create_empty_body('Vehicle')
 # Set mass of vehicle
 bodies.get_body('Vehicle').set_constant_mass(vehicle_mass)
+
 ###########################################################################
 # CREATE ACCELERATIONS ####################################################
 ###########################################################################
+
 # Define bodies that are propagated and their central bodies of propagation
 bodies_to_propagate = ['Vehicle']
 central_bodies = ['Moon']
@@ -170,9 +159,11 @@ acceleration_settings_on_vehicle = {
     'Moon': [propagation_setup.acceleration.spherical_harmonic_gravity(2, 2)]}
 # Create global accelerations dictionary
 acceleration_settings = {'Vehicle': acceleration_settings_on_vehicle}
+
 ###########################################################################
-# CREATE (CONSTANT) PROPAGATION SETTINGS ##################################
+# CREATE PROPAGATION SETTINGS #############################################
 ###########################################################################
+
 # Retrieve termination settings
 termination_settings = Util.get_termination_settings(simulation_start_epoch,
                                                      maximum_duration,
@@ -217,9 +208,9 @@ full_propagation_settings = propagation_setup.propagator.multitype(propagator_se
 # Create integrator settings
 current_integrator_settings = Util.get_integrator_settings(0, 0, 0,
                                                            simulation_start_epoch)
-
-decision_variable_range = \
-    ([5.0E3,10.0,-0.1,-0.5,-0.7,-1.0,-1.3],[20.0E3,100.0,0.1,0.5,0.7,1.0,1.3])
+# Set ranges for the decision variables ([min], [max])
+decision_variable_range = ([5.0E3, 10.0, -0.1, -0.5, -0.7, -1.0, -1.3],
+                           [20.0E3, 100.0, 0.1, 0.5, 0.7, 1.0, 1.3])
 
 # Create Lunar Ascent Problem object
 current_lunar_ascent_problem = LunarAscentProblem(bodies,
@@ -229,7 +220,9 @@ current_lunar_ascent_problem = LunarAscentProblem(bodies,
                                                   simulation_start_epoch,
                                                   decision_variable_range)
 
-
+###########################################################################
+# OPTIMIZE PROBLEM ########################################################
+###########################################################################
 
 # Select algorithm from pygmo, with one generation
 algo = pg.algorithm(pg.de())
@@ -255,5 +248,3 @@ for i in range(number_of_evolutions):
     population_list.append(pop.get_x())
     print(pop.champion_f)
     print('Evolving population; at generation ' + str(i))
-
-

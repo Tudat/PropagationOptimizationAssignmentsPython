@@ -31,16 +31,10 @@ get_propagation_termination_settings() function):
 * Distance to Mars < 50000 km
 * Propagation time > Time-of-flight of hodographic trajectory
 
-This propagation assumes only point mass gravity by the Sun and thrust acceleration of the vehicle
-(see block 'CREATE ACCELERATIONS'). Both the translational dynamics and mass of the vehicle are propagated,
-using a fixed specific impulse. The model settings used are as follows:
-
-0. Thrust and point mass gravity from Sun, Earth, Mars (NOMINAL CASE)
-1. Thrust and point mass gravity from Sun, Earth
-2. Thrust and point mass gravity from Sun, Mars
-3. Thrust and point mass gravity from Sun, Earth, Mars, Jupiter
-4. Thrust and point mass gravity from Sun, Earth, Mars, Jupiter with different Jovian ephemeris (generated through the
-unperturbed Sun-Jupiter two-body problem)
+Both the translational dynamics and mass of the vehicle are propagated,
+using a fixed specific impulse. The accelerations currently included are the vehicle thrust and the point-mass
+gravity of the Sun, the Earth, adn Mars. It is up to you to modify the dynamical model based on the results of
+assignment 2.
 
 The trajectory of the capsule is determined by its departure and arrival time (which define the initial and final states)
 as well as the free parameters of the shaping method. The free parameters of the shaping method defined here are the same
@@ -61,15 +55,8 @@ and integrator settings corresponding to the indices 0 and 0 are used, in combin
 the combination of integrator and propagator settings that you deem the most suitable, based on the results of
 assignment 1.
 
-The script saves the state and dependent variable history for each model settings. In addition, a single file called
-'limit_values.dat' is saved with the minimum and maximum time outside which numerical interpolation errors may affect
-your comparison. It is up to you whether cutting value outside of that temporal interval during the post-processing.
-Finally, outside of the main for loop, the differences in state and dependent variable history with respect to the
-nominal case are also written to files. The two are compared at discrete epochs generated with a fixed step size
-(see variable output_interpolation_step) valid for all cases. The function compare_models is designed to make
-other cross-comparisons possible (e.g. model 2 vs model 3).
-
-The output is written if the variable write_results_to_file is true.
+The last part of the code runs the optimization problem with PyGMO. For more information, see:
+https://tudat-space.readthedocs.io/en/latest/_src_examples/pygmo_basics.html.
 """
 
 ###########################################################################
@@ -246,6 +233,7 @@ get_hodographic_trajectory(hodographic_shaping_object,
 ###########################################################################
 # PROPAGATE TRAJECTORY ####################################################
 ###########################################################################
+
 # Define propagator
 current_propagator = propagation_setup.propagator.cowell
 # Define translational state propagator settings
@@ -271,8 +259,8 @@ current_integrator_settings = Util.get_integrator_settings(0,
                                                            initial_propagation_time)
 # Create Lunar Ascent Problem object
 decision_variable_range = \
-    ([0.0, 100.0, 0, -10000, -10000, -10000, -10000, -10000, -10000 ],
-     [6000.0, 800.0, 2.9999,10000,10000,10000,10000,10000,10000])
+    ([0.0, 100.0, 0, -10000, -10000, -10000, -10000, -10000, -10000],
+     [6000.0, 800.0, 2.9999, 10000, 10000, 10000, 10000, 10000, 10000])
 
 current_low_thrust_problem = LowThrustProblem(bodies,
                                               current_integrator_settings,
@@ -282,7 +270,11 @@ current_low_thrust_problem = LowThrustProblem(bodies,
                                               time_buffer,
                                               decision_variable_range,
                                               False)
-current_low_thrust_problem.fitness( trajectory_parameters )
+current_low_thrust_problem.fitness(trajectory_parameters)
+
+###########################################################################
+# OPTIMIZE PROBLEM ########################################################
+###########################################################################
 
 # Select algorithm from pygmo, with one generation
 algo = pg.algorithm(pg.de())

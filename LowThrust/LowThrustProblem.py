@@ -25,13 +25,13 @@ optimization is executed.
 # General imports
 import numpy as np
 
-
 # Tudatpy imports
 import tudatpy
 from tudatpy.io import save2txt
 from tudatpy.kernel import constants
 from tudatpy.kernel.simulation import propagation_setup
 from tudatpy.kernel.simulation import shape_based_thrust
+from tudatpy.util import result2array
 
 # Problem-specific imports
 import LowThrustUtilities as Util
@@ -40,6 +40,38 @@ import LowThrustUtilities as Util
 ###########################################################################
 # USEFUL PROBLEM-SPECIFIC FUNCTIONS ########################################
 ###########################################################################
+
+def compute_fitness(trajectory_parameters: list,
+                    hodographic_shaping_object: tudatpy.kernel.simulation.shape_based_thrust.HodographicShaping,
+                    state_history: dict = None,
+                    dependent_variable_history: dict = None) -> list:
+    """
+    It computes the fitness values. Currently, the (single) objective is to minimize the delta v.
+    This function should be improved and/or extended.
+
+    Parameters
+    ----------
+    trajectory_parameters:
+        List of decision variables.
+    hodographic_shaping_object : tudatpy.kernel.simulation.shape_based_thrust.HodographicShaping
+        Hodographic shaping object.
+    state_history : dict
+        State history.
+    dependent_variable_history : dict
+        Dependent variable history.
+
+    Returns
+    -------
+    list
+        List of fitness values for each objective.
+    """
+    # Converts state and dependent variable history to arrays
+    if state_history is not None:
+        states = result2array(state_history)
+        dependent_variables = result2array(dependent_variable_history)
+    # Computes the delta V consumed
+    delta_v = hodographic_shaping_object.compute_delta_v()
+    return [delta_v]
 
 
 def get_trajectory_time_of_flight(trajectory_parameters: list) -> float:
@@ -454,9 +486,12 @@ class LowThrustProblem:
 
     Methods
     -------
+    get_last_run_propagated_cartesian_state_history()
     get_last_run_propagated_state_history()
     get_last_run_dependent_variable_history()
     get_last_run_dynamics_simulator()
+    get_bounds()
+    get_nobj()
     fitness(trajectory_parameters)
     get_hodographic_shaping()
     """
@@ -468,7 +503,7 @@ class LowThrustProblem:
                  specific_impulse: float,
                  minimum_mars_distance: float,
                  time_buffer: float,
-                 decision_variable_range,
+                 decision_variable_range: tuple,
                  perform_propagation: bool = True):
         """
         Constructor for the LowThrustProblem class.
@@ -487,6 +522,8 @@ class LowThrustProblem:
             Minimum distance from Mars at which the propagation stops.
         time_buffer : float
             Time interval between the simulation start epoch and the beginning of the hodographic trajectory.
+        decision_variable_range : tuple
+            Boundary values (min, max) for the decision variables.
         perform_propagation : bool (default: True)
             If true, the propagation is performed.
 
@@ -495,9 +532,9 @@ class LowThrustProblem:
         none
         """
         # Copy arguments as attributes
-        self.bodies_function = lambda : bodies
-        self.integrator_settings_function = lambda : integrator_settings
-        self.propagator_settings_function = lambda : propagator_settings
+        self.bodies_function = lambda: bodies
+        self.integrator_settings_function = lambda: integrator_settings
+        self.propagator_settings_function = lambda: propagator_settings
         self.specific_impulse = specific_impulse
         self.minimum_mars_distance = minimum_mars_distance
         self.time_buffer = time_buffer
@@ -505,12 +542,22 @@ class LowThrustProblem:
         self.perform_propagation = perform_propagation
         # Extract translational state propagator settings from the full propagator settings
         if perform_propagation:
-            self.translational_state_propagator_settings_function = lambda : propagator_settings.single_type_settings(
+            self.translational_state_propagator_settings_function = lambda: propagator_settings.single_type_settings(
                 propagation_setup.translational_type)
 
     def get_bounds(self):
+        """
+        Returns the boundaries of the decision variables.
+        """
 
         return self.decision_variable_range
+
+    def get_nobj(self):
+        """
+        Returns the number of objectives (currently: single-objective).
+        """
+
+        return 1
 
     def get_last_run_propagated_cartesian_state_history(self) -> dict:
         """
@@ -524,7 +571,7 @@ class LowThrustProblem:
         -------
         dict
         """
-        return self.dynamics_simulator.get_equations_of_motion_numerical_solution()
+        return self.dynamics_simulator_function().get_equations_of_motion_numerical_solution()
 
     def get_last_run_propagated_state_history(self) -> dict:
         """
@@ -539,7 +586,7 @@ class LowThrustProblem:
         -------
         dict
         """
-        return self.dynamics_simulator.get_equations_of_motion_numerical_solution_raw()
+        return self.dynamics_simulator_function().get_equations_of_motion_numerical_solution_raw()
 
     def get_last_run_dependent_variable_history(self) -> dict:
         """
@@ -553,7 +600,7 @@ class LowThrustProblem:
         -------
         dict
         """
-        return self.dynamics_simulator.get_dependent_variable_history()
+        return self.dynamics_simulator_function().get_dependent_variable_history()
 
     def get_last_run_dynamics_simulator(self) -> tudatpy.kernel.simulation.propagation_setup.SingleArcDynamicsSimulator:
         """
@@ -567,7 +614,7 @@ class LowThrustProblem:
         -------
         tudatpy.kernel.simulation.propagation_setup.SingleArcDynamicsSimulator
         """
-        return self.dynamics_simulator
+        return self.dynamics_simulator_function
 
     def fitness(self,
                 trajectory_parameters) -> float:
@@ -591,14 +638,13 @@ class LowThrustProblem:
         # Create hodographic shaping object
         bodies = self.bodies_function()
         hodographic_shaping = create_hodographic_shaping_object(trajectory_parameters,
-                                                                     bodies)
-        self.hodographic_shaping_function = lambda : hodographic_shaping
+                                                                bodies)
+        self.hodographic_shaping_function = lambda: hodographic_shaping
         # Propagate trajectory only if required
         if self.perform_propagation:
-
-            integrator_settings = self.integrator_settings_function( )
-            translational_state_propagator_settings = self.translational_state_propagator_settings_function( )
-            propagator_settings = self.propagator_settings_function( )
+            integrator_settings = self.integrator_settings_function()
+            translational_state_propagator_settings = self.translational_state_propagator_settings_function()
+            propagator_settings = self.propagator_settings_function()
 
             initial_propagation_time = get_trajectory_initial_time(trajectory_parameters,
                                                                    self.time_buffer)
@@ -625,7 +671,7 @@ class LowThrustProblem:
             acceleration_settings['Vehicle']['Vehicle'].append(new_thrust_settings)
             # Update translational propagator settings: accelerations
             translational_state_propagator_settings.reset_and_recreate_acceleration_models(acceleration_settings,
-                                                                                                bodies)
+                                                                                           bodies)
             # Retrieve initial state
             new_initial_state = get_hodograph_state_at_epoch(trajectory_parameters,
                                                              bodies,
@@ -640,18 +686,25 @@ class LowThrustProblem:
             propagator_settings.reset_initial_states(new_full_initial_state)
             # Get the termination settings
             propagator_settings.termination_settings = Util.get_termination_settings(trajectory_parameters,
-                                                                                          self.minimum_mars_distance,
-                                                                                          self.time_buffer)
+                                                                                     self.minimum_mars_distance,
+                                                                                     self.time_buffer)
             # Create simulation object and propagate dynamics
             dynamics_simulator = propagation_setup.SingleArcDynamicsSimulator(bodies,
                                                                               integrator_settings,
                                                                               propagator_settings,
-                                                                              print_dependent_variable_data = False)
+                                                                              print_dependent_variable_data=False)
 
-            self.dynamics_simulator_function = lambda : dynamics_simulator
-        # For the first two assignments, no computation of fitness is needed
-        fitness = hodographic_shaping.compute_delta_v( )
-        return [fitness]
+            self.dynamics_simulator_function = lambda: dynamics_simulator
+        # Compute fitness, checking if the trajectory has been numerically propagated or not
+        if hasattr(self, 'dynamics_simulator_function'):
+            fitness_list = compute_fitness(trajectory_parameters,
+                                           hodographic_shaping,
+                                           self.get_last_run_propagated_cartesian_state_history(),
+                                           self.get_last_run_dependent_variable_history())
+        else:
+            fitness_list = compute_fitness(trajectory_parameters,
+                                           hodographic_shaping)
+        return fitness_list
 
     def get_hodographic_shaping(self):
         """
@@ -665,4 +718,4 @@ class LowThrustProblem:
         -------
         tudatpy.kernel.simulation.shape_based_thrust.HodographicShaping
         """
-        return self.hodographic_shaping_function( )
+        return self.hodographic_shaping_function()

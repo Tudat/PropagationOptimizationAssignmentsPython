@@ -31,6 +31,40 @@ from tudatpy.kernel import constants
 from tudatpy.kernel.simulation import propagation_setup
 from tudatpy.kernel.astro import frames
 from tudatpy.kernel.math import interpolators
+from tudatpy.util import result2array
+
+
+###########################################################################
+# CREATE FITNESS FUNCTION #################################################
+###########################################################################
+
+def compute_fitness(state_history: dict,
+                    dependent_variable_history: dict,
+                    thrust_parameters: list) -> list:
+    """
+    It computes the fitness values. Currently, the (single) objective is to minimize the propellant used for the ascent.
+    This function should be improved and/or extended.
+
+    Parameters
+    ----------
+    state_history : dict
+        State history.
+    dependent_variable_history : dict
+        Dependent variable history.
+    thrust_parameters:
+        List of decision variables.
+
+    Returns
+    -------
+    list
+        List of fitness values for each objective.
+    """
+    # Converts state and dependent variable history to arrays
+    states = result2array(state_history)
+    dependent_variables = result2array(dependent_variable_history)
+    # Computes the propellant consumed
+    propellant_used = states[0, -1] - states[-1, -1]
+    return [propellant_used]
 
 ###########################################################################
 # CREATE PROBLEM CLASS ####################################################
@@ -52,13 +86,16 @@ class LunarAscentProblem:
     propagator_settings
     constant_specific_impulse
     simulation_start_epoch
-    dynamics_simulator
+    dynamics_simulator_function
 
     Methods
     -------
     get_last_run_propagated_state_history()
+    get_last_run_propagated_cartesian_state_history()
     get_last_run_dependent_variable_history()
     get_last_run_dynamics_simulator()
+    get_bounds()
+    get_nobj()
     fitness(thrust_parameters)
     """
 
@@ -68,7 +105,7 @@ class LunarAscentProblem:
                  propagator_settings: tudatpy.kernel.simulation.propagation_setup.propagator.MultiTypePropagatorSettings,
                  constant_specific_impulse: float,
                  simulation_start_epoch: float,
-                 decision_variable_range):
+                 decision_variable_range: tuple):
         """
         Constructor for the LunarAscentProblem class.
 
@@ -84,26 +121,40 @@ class LunarAscentProblem:
             Specific impulse of the vehicle that is kept constant during the propagation.
         simulation_start_epoch : float
             Epoch when the simulation begins [s].
+        decision_variable_range : tuple
+            Boundary values (min, max) for the decision variables.
 
         Returns
         -------
         none
         """
         # Set attributes
-        self.bodies_function = lambda : bodies
-        self.integrator_settings_function = lambda :integrator_settings
-        self.propagator_settings_function = lambda :propagator_settings
+        self.bodies_function = lambda: bodies
+        self.integrator_settings_function = lambda: integrator_settings
+        self.propagator_settings_function = lambda: propagator_settings
         self.constant_specific_impulse = constant_specific_impulse
         self.simulation_start_epoch = simulation_start_epoch
         self.decision_variable_range = decision_variable_range
+        self.dynamics_simulator_function = None
 
         # Extract translational state propagator settings from the full propagator settings
         translational_type = propagation_setup.StateType.translational_type
-        self.translational_state_propagator_settings_function = lambda :propagator_settings.single_type_settings(translational_type)
+        self.translational_state_propagator_settings_function = lambda: propagator_settings.single_type_settings(
+            translational_type)
 
     def get_bounds(self):
+        """
+        Returns the boundaries of the decision variables.
+        """
 
         return self.decision_variable_range
+
+    def get_nobj(self):
+        """
+        Returns the number of objectives (currently: single-objective).
+        """
+
+        return 1
 
     def get_last_run_propagated_cartesian_state_history(self) -> dict:
         """
@@ -117,7 +168,7 @@ class LunarAscentProblem:
         -------
         dict
         """
-        return self.dynamics_simulator_function( ).get_equations_of_motion_numerical_solution()
+        return self.dynamics_simulator_function().get_equations_of_motion_numerical_solution()
 
     def get_last_run_propagated_state_history(self) -> dict:
         """
@@ -132,7 +183,7 @@ class LunarAscentProblem:
         -------
         dict
         """
-        return self.dynamics_simulator_function( ).get_equations_of_motion_numerical_solution_raw()
+        return self.dynamics_simulator_function().get_equations_of_motion_numerical_solution_raw()
 
     def get_last_run_dependent_variable_history(self) -> dict:
         """
@@ -146,7 +197,7 @@ class LunarAscentProblem:
         -------
         dict
         """
-        return self.dynamics_simulator_function( ).get_dependent_variable_history()
+        return self.dynamics_simulator_function().get_dependent_variable_history()
 
     def get_last_run_dynamics_simulator(self) -> tudatpy.kernel.simulation.propagation_setup.SingleArcDynamicsSimulator:
         """
@@ -160,7 +211,7 @@ class LunarAscentProblem:
         -------
         tudatpy.kernel.simulation.propagation_setup.SingleArcDynamicsSimulator
         """
-        return self.dynamics_simulator_function( )
+        return self.dynamics_simulator_function()
 
     def fitness(self,
                 thrust_parameters: list) -> float:
@@ -200,19 +251,21 @@ class LunarAscentProblem:
         acceleration_settings['Vehicle']['Vehicle'].append(new_thrust_settings)
         # Update translational propagator settings
         translational_state_propagator_settings.reset_and_recreate_acceleration_models(acceleration_settings,
-                                                                                            bodies)
+                                                                                       bodies)
         # Update full propagator settings
         propagator_settings.recreate_state_derivative_models(bodies)
         # Create simulation object and propagate dynamics
         dynamics_simulator = propagation_setup.SingleArcDynamicsSimulator(bodies,
-                                                                               integrator_settings,
-                                                                               propagator_settings,
-                                                                               print_dependent_variable_data = False)
+                                                                          integrator_settings,
+                                                                          propagator_settings,
+                                                                          print_dependent_variable_data=False)
+        # Store it as an attribute
         self.dynamics_simulator_function = lambda: dynamics_simulator
-
-        # For the first two assignments, no computation of fitness is needed
-        fitness = 0.0
-        return [fitness]
+        # Compute fitness
+        fitness_list = compute_fitness(self.get_last_run_propagated_cartesian_state_history(),
+                                       self.get_last_run_dependent_variable_history(),
+                                       thrust_parameters)
+        return fitness_list
 
 
 ###########################################################################
@@ -332,6 +385,7 @@ class LunarAscentThrustGuidance:
             Thrust magnitude.
         """
         return self.thrust_magnitude
+
 
 ###########################################################################
 # CREATE OTHER PROBLEM-SPECIFIC FUNCTIONS #################################

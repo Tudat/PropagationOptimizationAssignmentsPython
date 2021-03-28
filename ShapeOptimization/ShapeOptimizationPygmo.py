@@ -17,8 +17,7 @@ Student number: ***COMPLETE HERE***
 This module is the main script that executes the propagation and optimization. It relies on two other modules, defined
 for a more practical organization of functions and classes, which are imported below.
 
-This function computes the dynamics of a capsule re-entering the atmosphere of the Earth, using a
-variety of model settings (see below).
+This function computes the dynamics of a capsule re-entering the atmosphere of the Earth.
 
 The vehicle starts 120 km above the surface of the planet, with a speed of 7.83 km/s in an Earth-fixed frame (see
 getInitialState function).
@@ -28,13 +27,9 @@ get_propagation_termination_settings() function):
 - Altitude < 25 km
 - Propagation time > 24 hr
 
-Only the translational dynamics is propagated. The accelerations are currently set as follows:
-
-0. Aerodynamic acceleration and Earth spherical harmonics gravity up to order 2 and degree 2 (NOMINAL CASE)
-1. Aerodynamic acceleration and Earth point mass gravity
-2. Aerodynamic acceleration and Earth spherical harmonics gravity up to order 4 and degree 4
-3. Lke the nominal case, but the Earth has a simplified rotational model
-4. Like the nominal case, but the Earth has a simplified atmosphere model
+Only the translational dynamics is propagated. The accelerations currently included are the Earth's Spherical
+Harmonic gravity up to order 2 and degree 2 and the aerodynamic acceleration. It is up to you to modify the dynamical
+model based on the results of assignment 2.
 
 The trajectory of the capsule is heavily dependent on the shape and orientation of the vehicle. Here, the shape is
 determined here by the five parameters, which are used to compute the aerodynamic accelerations on the vehicle using a 
@@ -54,15 +49,8 @@ and integrator settings corresponding to the indices 0 and 0 are used, in combin
 the combination of integrator and propagator settings that you deem the most suitable, based on the results of
 assignment 1.
 
-The script saves the state and dependent variable history for each model settings. In addition, a single file called
-'limit_values.dat' is saved with the minimum and maximum time outside which numerical interpolation errors may affect
-your comparison. It is up to you whether cutting value outside of that temporal interval during the post-processing.
-Finally, outside of the main for loop, the differences in state and dependent variable history with respect to the
-nominal case are also written to files. The two are compared at discrete epochs generated with a fixed step size
-(see variable output_interpolation_step) valid for all cases. The function compare_models is designed to make
-other cross-comparisons possible (e.g. model 2 vs model 3).
-
-The output is written if the variable write_results_to_file is true.
+The last part of the code runs the optimization problem with PyGMO. For more information, see:
+https://tudat-space.readthedocs.io/en/latest/_src_examples/pygmo_basics.html.
 """
 
 ###########################################################################
@@ -125,6 +113,7 @@ maximum_duration = constants.JULIAN_DAY  # s
 termination_altitude = 25.0E3  # m
 # Set vehicle properties
 capsule_density = 250.0  # kg m-3
+
 ###########################################################################
 # CREATE ENVIRONMENT ######################################################
 ###########################################################################
@@ -153,6 +142,7 @@ bodies = environment_setup.create_system_of_bodies(body_settings)
 add_capsule_to_body_system(bodies,
                            shape_parameters,
                            capsule_density)
+
 ###########################################################################
 # CREATE ACCELERATIONS ####################################################
 ###########################################################################
@@ -164,9 +154,11 @@ acceleration_settings_on_vehicle = {'Earth': [propagation_setup.acceleration.sph
                                               propagation_setup.acceleration.aerodynamic()]}
 # Create global accelerations' dictionary
 acceleration_settings = {'Capsule': acceleration_settings_on_vehicle}
+
 ###########################################################################
 # CREATE (CONSTANT) PROPAGATION SETTINGS ##################################
 ###########################################################################
+
 # Retrieve termination settings
 termination_settings = Util.get_termination_settings(simulation_start_epoch,
                                                      maximum_duration,
@@ -197,7 +189,8 @@ current_propagator_settings.recreate_state_derivative_models(bodies)
 current_integrator_settings = Util.get_integrator_settings(0, 0, 0, simulation_start_epoch)
 
 decision_variable_range = \
-    ([ 3.5, 2.0, 0.1, np.deg2rad(-55.0), 0.01, 0.0 ],[ 10.0, 3.0, 5.0, np.deg2rad(-10.0), 0.5, np.deg2rad(30.0) ] )
+    ([3.5, 2.0, 0.1, np.deg2rad(-55.0), 0.01, 0.0],
+     [10.0, 3.0, 5.0, np.deg2rad(-10.0), 0.5, np.deg2rad(30.0)])
 
 # Create Lunar Ascent Problem object
 current_shape_optimization_problem = ShapeOptimizationProblem(bodies,
@@ -206,7 +199,9 @@ current_shape_optimization_problem = ShapeOptimizationProblem(bodies,
                                                               capsule_density,
                                                               decision_variable_range)
 
-
+###########################################################################
+# OPTIMIZE PROBLEM ########################################################
+###########################################################################
 
 # Select algorithm from pygmo, with one generation
 algo = pg.algorithm(pg.de())

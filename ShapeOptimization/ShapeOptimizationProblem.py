@@ -31,10 +31,40 @@ from tudatpy.kernel.simulation import environment_setup
 from tudatpy.kernel.simulation import propagation_setup
 from tudatpy.kernel.astro import aerodynamics
 from tudatpy.kernel.math import geometry
+from tudatpy.util import result2array
+
 
 ###########################################################################
 # USEFUL PROBLEM-SPECIFIC FUNCTION DEFINITIONS ############################
 ###########################################################################
+
+def compute_fitness(state_history: dict,
+                    dependent_variable_history: dict,
+                    shape_parameters: list) -> list:
+    """
+    It computes the fitness values. Currently, the (single) objective is to minimize the propellant used for the ascent.
+    This function should be improved and/or extended.
+
+    Parameters
+    ----------
+    state_history : dict
+        State history.
+    dependent_variable_history : dict
+        Dependent variable history.
+    shape_parameters:
+        List of decision variables.
+
+    Returns
+    -------
+    list
+        List of fitness values for each objective.
+    """
+    # Converts state and dependent variable history to arrays
+    states = result2array(state_history)
+    dependent_variables = result2array(dependent_variable_history)
+    # Computes the time of flight (we want to maximize it, so the fitness is its reciprocal)
+    time_of_flight = states[-1, 0] - states[0, 0]
+    return [1 / time_of_flight]
 
 
 def get_capsule_coefficient_interface(capsule_shape: tudatpy.kernel.math.geometry.Capsule) \
@@ -76,7 +106,7 @@ def get_capsule_coefficient_interface(capsule_shape: tudatpy.kernel.math.geometr
     mach_points = aerodynamics.get_default_local_inclination_mach_points()
     independent_variable_data_points.append(mach_points)
     # Angle of attack
-    angle_of_attack_points = np.linspace(np.deg2rad(-40),np.deg2rad(40),17)
+    angle_of_attack_points = np.linspace(np.deg2rad(-40), np.deg2rad(40), 17)
     independent_variable_data_points.append(angle_of_attack_points)
     # Angle of sideslip
     angle_of_sideslip_points = aerodynamics.get_default_local_inclination_sideslip_angle_points()
@@ -240,6 +270,7 @@ class CapsuleAerodynamicGuidance(aerodynamics.AerodynamicGuidance):
         self.bank_angle = 0.0
         self.sideslip_angle = 0.0
 
+
 ###########################################################################
 # CREATE PROBLEM CLASS ####################################################
 ###########################################################################
@@ -259,9 +290,13 @@ class ShapeOptimizationProblem:
     integrator_settings
     propagator_settings
     capsule_density
+    decision_variable_range
 
     Methods
     -------
+    get_bounds()
+    get_nobj()
+    get_last_run_propagated_cartesian_state_history()
     get_last_run_propagated_state_history()
     get_last_run_dependent_variable_history()
     get_last_run_dynamics_simulator()
@@ -269,11 +304,11 @@ class ShapeOptimizationProblem:
     """
 
     def __init__(self,
-                 bodies,
-                 integrator_settings,
-                 propagator_settings,
-                 capsule_density,
-                 decision_variable_range):
+                 bodies: tudatpy.kernel.simulation.environment_setup.SystemOfBodies,
+                 integrator_settings: tudatpy.kernel.simulation.propagation_setup.integrator.IntegratorSettings,
+                 propagator_settings: tudatpy.kernel.simulation.propagation_setup.propagator.MultiTypePropagatorSettings,
+                 capsule_density: float,
+                 decision_variable_range: tuple):
         """
         Constructor for the ShapeOptimizationProblem class.
 
@@ -287,18 +322,34 @@ class ShapeOptimizationProblem:
             Propagator settings object.
         capsule_density : float
             Constant density of the vehicle.
+        decision_variable_range : tuple
+            Boundary values (min, max) for the decision variables.
 
         Returns
         -------
         none
         """
         # Set arguments as attributes
-        self.bodies_function = lambda : bodies
-        self.integrator_settings_function = lambda : integrator_settings
-        self.propagator_settings_function = lambda : propagator_settings
+        self.bodies_function = lambda: bodies
+        self.integrator_settings_function = lambda: integrator_settings
+        self.propagator_settings_function = lambda: propagator_settings
         self.capsule_density = capsule_density
         self.decision_variable_range = decision_variable_range
+        self.dynamics_simulator_function = None
 
+    def get_bounds(self):
+        """
+        Returns the boundaries of the decision variables.
+        """
+
+        return self.decision_variable_range
+
+    def get_nobj(self):
+        """
+        Returns the number of objectives (currently: single-objective).
+        """
+
+        return 1
 
     def get_last_run_propagated_cartesian_state_history(self) -> dict:
         """
@@ -312,7 +363,7 @@ class ShapeOptimizationProblem:
         -------
         dict
         """
-        return self.dynamics_simulator_function( ).get_equations_of_motion_numerical_solution()
+        return self.dynamics_simulator_function().get_equations_of_motion_numerical_solution()
 
     def get_last_run_propagated_state_history(self) -> dict:
         """
@@ -327,11 +378,7 @@ class ShapeOptimizationProblem:
         -------
         dict
         """
-        return self.dynamics_simulator_function( ).get_equations_of_motion_numerical_solution_raw()
-
-    def get_bounds(self):
-
-        return self.decision_variable_range
+        return self.dynamics_simulator_function().get_equations_of_motion_numerical_solution_raw()
 
     def get_last_run_dependent_variable_history(self) -> dict:
         """
@@ -345,7 +392,7 @@ class ShapeOptimizationProblem:
         -------
         dict
         """
-        return self.dynamics_simulator_function( ).get_dependent_variable_history()
+        return self.dynamics_simulator_function().get_dependent_variable_history()
 
     def get_last_run_dynamics_simulator(self):
         """
@@ -359,7 +406,7 @@ class ShapeOptimizationProblem:
         -------
         tudatpy.kernel.simulation.propagation_setup.SingleArcDynamicsSimulator
         """
-        return self.dynamics_simulator_function( )
+        return self.dynamics_simulator_function()
 
     def fitness(self,
                 shape_parameters):
@@ -406,10 +453,12 @@ class ShapeOptimizationProblem:
             bodies,
             integrator_settings,
             propagator_settings,
-            print_dependent_variable_data = False)
+            print_dependent_variable_data=False)
 
         self.dynamics_simulator_function = lambda: dynamics_simulator
 
-        # For the first two assignments, no computation of fitness is needed
-        fitness = 0.0
-        return [fitness]
+        # Compute fitness
+        fitness_list = compute_fitness(self.get_last_run_propagated_cartesian_state_history(),
+                                       self.get_last_run_dependent_variable_history(),
+                                       shape_parameters)
+        return fitness_list
