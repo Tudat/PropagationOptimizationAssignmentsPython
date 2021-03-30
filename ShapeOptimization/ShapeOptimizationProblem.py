@@ -143,6 +143,8 @@ def set_capsule_shape_parameters(shape_parameters: list,
     # Update the Capsule's aerodynamic coefficient interface
     bodies.get_body('Capsule').set_aerodynamic_coefficient_interface(new_aerodynamic_coefficient_interface)
 
+    return new_aerodynamic_coefficient_interface
+
 
 # NOTE TO STUDENTS: if and when making modifications to the capsule shape, do include them in this function and not in
 # the main code.
@@ -169,7 +171,7 @@ def add_capsule_to_body_system(bodies: tudatpy.kernel.simulation.environment_set
     # Create new vehicle object and add it to the existing system of bodies
     bodies.create_empty_body('Capsule')
     # Update the capsule shape parameters
-    set_capsule_shape_parameters(shape_parameters,
+    return set_capsule_shape_parameters(shape_parameters,
                                  bodies,
                                  capsule_density)
 
@@ -387,10 +389,13 @@ class ShapeOptimizationProblem:
         # Delete existing capsule
         bodies.delete_body('Capsule')
         # Create new capsule with a new coefficient interface based on the current parameters, add it to the body system
-        add_capsule_to_body_system(bodies,
+        aerodynamic_analysis = add_capsule_to_body_system(bodies,
                                    shape_parameters,
                                    self.capsule_density)
 
+        vehicle_mesh_surface = aerodynamics.get_local_inclination_total_vehicle_area(aerodynamic_analysis)
+        [ vehicle_mesh_centroids, vehicle_mesh_surface_normals ] = aerodynamics.get_local_inclination_mesh(aerodynamic_analysis)
+        print(vehicle_mesh_centroids)
         # Update propagation model with new body shape
         propagator_settings.recreate_state_derivative_models(bodies)
 
